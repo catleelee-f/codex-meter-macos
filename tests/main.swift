@@ -1,5 +1,22 @@
 import Foundation
 
+let accountResponse = Data(#"""
+{"id":2601,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":63,"windowDurationMins":10080,"resetsAt":1784674864},"secondary":null,"planType":"plus"},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":63,"windowDurationMins":10080,"resetsAt":1784674864},"secondary":null,"planType":"plus"}}}}
+"""#.utf8)
+let accountSnapshot = try CodexAccountUsageClient.parseResponse(
+    accountResponse,
+    fetchedAt: Date(timeIntervalSince1970: 1_784_160_000)
+)
+guard accountSnapshot.source == .accountAPI,
+      accountSnapshot.planType == "plus",
+      accountSnapshot.windows.count == 1,
+      accountSnapshot.windows[0].windowMinutes == 10_080,
+      accountSnapshot.windows[0].usedPercent == 63,
+      accountSnapshot.windows[0].remainingPercent == 37 else {
+    fatalError("Account rate-limit response parsing failed")
+}
+print("account_remaining=\(UsageFormatters.percent(accountSnapshot.windows[0].remainingPercent))")
+
 let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
     ?? (NSHomeDirectory() as NSString).appendingPathComponent(".codex")
 let sessionsURL = URL(

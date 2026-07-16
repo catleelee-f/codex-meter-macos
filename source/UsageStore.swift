@@ -5,14 +5,19 @@ final class UsageStore: ObservableObject {
     @Published private(set) var snapshot: UsageSnapshot = .empty
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var accountQuotaState: AccountQuotaState = .waiting
     @Published private(set) var sessionsPath: String
     @Published private(set) var refreshInterval: TimeInterval
     @Published private(set) var showMenuPercentage: Bool
 
     private let defaults: UserDefaults
+    private let accountUsageClient: CodexAccountUsageClient
     private let scannerQueue = DispatchQueue(label: "local.codexmeter.scanner", qos: .userInitiated)
+    private let accountSyncInterval: TimeInterval = 300
     private var timer: Timer?
     private var activeRequestID = UUID()
+    private var latestAccountRateLimits: RateLimitSnapshot?
+    private var lastAccountSyncAttempt = Date.distantPast
 
     private enum Keys {
         static let sessionsPath = "sessionsPath"
@@ -20,8 +25,12 @@ final class UsageStore: ObservableObject {
         static let showMenuPercentage = "showMenuPercentage"
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        accountUsageClient: CodexAccountUsageClient = CodexAccountUsageClient()
+    ) {
         self.defaults = defaults
+        self.accountUsageClient = accountUsageClient
 
         let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
             ?? (NSHomeDirectory() as NSString).appendingPathComponent(".codex")
@@ -49,6 +58,14 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh() {
+        performRefresh(forceAccountSync: true)
+    }
+
+    func refreshIfNeeded() {
+        performRefresh(forceAccountSync: false)
+    }
+
+    private func performRefresh(forceAccountSync: Bool) {
         guard !isRefreshing else { return }
 
         isRefreshing = true
@@ -56,22 +73,71 @@ final class UsageStore: ObservableObject {
         let requestID = UUID()
         activeRequestID = requestID
         let rootURL = URL(fileURLWithPath: expandedPath(sessionsPath), isDirectory: true)
+        let now = Date()
+        let shouldSyncAccount = forceAccountSync
+            || latestAccountRateLimits == nil
+            || now.timeIntervalSince(lastAccountSyncAttempt) >= accountSyncInterval
+        let cachedAccountRateLimits = latestAccountRateLimits
+        if shouldSyncAccount {
+            lastAccountSyncAttempt = now
+            accountQuotaState = .syncing
+        }
 
         scannerQueue.async { [weak self] in
             guard let self else { return }
+
+            let localResult: UsageSnapshot
+            let localErrorMessage: String?
             do {
-                let result = try CodexLogScanner(rootURL: rootURL).scan(historyDays: 90)
-                DispatchQueue.main.async {
-                    guard self.activeRequestID == requestID else { return }
-                    self.snapshot = result
-                    self.isRefreshing = false
-                }
+                localResult = try CodexLogScanner(rootURL: rootURL).scan(historyDays: 90)
+                localErrorMessage = nil
             } catch {
-                DispatchQueue.main.async {
-                    guard self.activeRequestID == requestID else { return }
-                    self.errorMessage = error.localizedDescription
-                    self.isRefreshing = false
+                var empty = UsageSnapshot.empty
+                empty.updatedAt = Date()
+                localResult = empty
+                localErrorMessage = error.localizedDescription
+            }
+
+            var mergedResult = localResult
+            var refreshedAccountRateLimits: RateLimitSnapshot?
+            let quotaState: AccountQuotaState
+
+            if shouldSyncAccount {
+                do {
+                    let accountRateLimits = try self.accountUsageClient.fetchRateLimits()
+                    refreshedAccountRateLimits = accountRateLimits
+                    mergedResult.rateLimits = accountRateLimits
+                    quotaState = .synced(accountRateLimits.timestamp)
+                } catch {
+                    if let cachedAccountRateLimits {
+                        mergedResult.rateLimits = cachedAccountRateLimits
+                        quotaState = .fallback(
+                            cachedAccountRateLimits.timestamp,
+                            error.localizedDescription
+                        )
+                    } else {
+                        quotaState = .fallback(
+                            localResult.rateLimits?.timestamp,
+                            error.localizedDescription
+                        )
+                    }
                 }
+            } else if let cachedAccountRateLimits {
+                mergedResult.rateLimits = cachedAccountRateLimits
+                quotaState = .synced(cachedAccountRateLimits.timestamp)
+            } else {
+                quotaState = .fallback(localResult.rateLimits?.timestamp, "等待账号同步")
+            }
+
+            DispatchQueue.main.async {
+                guard self.activeRequestID == requestID else { return }
+                if let refreshedAccountRateLimits {
+                    self.latestAccountRateLimits = refreshedAccountRateLimits
+                }
+                self.snapshot = mergedResult
+                self.errorMessage = localErrorMessage
+                self.accountQuotaState = quotaState
+                self.isRefreshing = false
             }
         }
     }
@@ -113,7 +179,7 @@ final class UsageStore: ObservableObject {
     private func scheduleTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            self?.refresh()
+            self?.refreshIfNeeded()
         }
         if let timer {
             RunLoop.main.add(timer, forMode: .common)

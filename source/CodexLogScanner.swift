@@ -313,7 +313,8 @@ final class CodexLogScanner {
                 limitsSnapshot = RateLimitSnapshot(
                     timestamp: timestamp,
                     planType: rateLimits["plan_type"] as? String,
-                    windows: windows.sorted(by: { $0.windowMinutes < $1.windowMinutes })
+                    windows: windows.sorted(by: { $0.windowMinutes < $1.windowMinutes }),
+                    source: .localLog
                 )
             }
         }

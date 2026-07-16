@@ -102,10 +102,23 @@ struct RateLimitWindow: Codable, Equatable, Identifiable {
     }
 }
 
+enum RateLimitSource: String, Codable, Equatable {
+    case accountAPI
+    case localLog
+}
+
 struct RateLimitSnapshot: Codable, Equatable {
     var timestamp: Date
     var planType: String?
     var windows: [RateLimitWindow]
+    var source: RateLimitSource? = nil
+}
+
+enum AccountQuotaState: Equatable {
+    case waiting
+    case syncing
+    case synced(Date)
+    case fallback(Date?, String)
 }
 
 struct DailyUsage: Identifiable, Equatable {

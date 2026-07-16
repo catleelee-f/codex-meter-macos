@@ -27,6 +27,7 @@ xcrun swiftc \
 SOURCES=(
   "$PROJECT_DIR/source/Models.swift"
   "$PROJECT_DIR/source/CodexLogScanner.swift"
+  "$PROJECT_DIR/source/CodexAccountUsageClient.swift"
   "$PROJECT_DIR/source/UsageStore.swift"
   "$PROJECT_DIR/source/DashboardViews.swift"
   "$PROJECT_DIR/source/AppDelegate.swift"

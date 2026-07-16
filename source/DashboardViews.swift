@@ -32,7 +32,7 @@ struct DashboardView: View {
             }
 
             OverviewCard(snapshot: store.snapshot)
-            RateLimitsCard(snapshot: store.snapshot)
+            RateLimitsCard(store: store)
             HeatmapCard(snapshot: store.snapshot)
 
             HStack(spacing: 9) {
@@ -109,12 +109,22 @@ struct DashboardView: View {
 
     private var headerSubtitle: String {
         if store.isRefreshing && store.snapshot.updatedAt == .distantPast {
-            return "正在读取本地 Codex 数据…"
+            return "正在同步账号额度与本机 Token…"
         }
-        guard store.snapshot.updatedAt != .distantPast else {
-            return "尚未读取数据"
+
+        switch store.accountQuotaState {
+        case .waiting:
+            return store.snapshot.updatedAt == .distantPast ? "尚未读取数据" : "等待账号额度同步"
+        case .syncing:
+            return "正在同步账号额度…"
+        case .synced(let date):
+            return "账号额度更新于 \(timeOnly(date))"
+        case .fallback(let date, _):
+            if let date {
+                return "账号同步待重试 · 快照 \(timeOnly(date))"
+            }
+            return "账号同步待重试"
         }
-        return "本地更新于 \(timeOnly(store.snapshot.updatedAt))"
     }
 
     private func timeOnly(_ date: Date) -> String {
@@ -247,7 +257,9 @@ private struct TokenSegments: View {
 }
 
 private struct RateLimitsCard: View {
-    let snapshot: UsageSnapshot
+    @ObservedObject var store: UsageStore
+
+    private var snapshot: UsageSnapshot { store.snapshot }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -260,6 +272,7 @@ private struct RateLimitsCard: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
+                sourceBadge
             }
 
             if let windows = snapshot.rateLimits?.windows, !windows.isEmpty {
@@ -278,6 +291,35 @@ private struct RateLimitsCard: View {
         }
         .padding(15)
         .meterCard()
+    }
+
+    @ViewBuilder
+    private var sourceBadge: some View {
+        switch store.accountQuotaState {
+        case .synced:
+            badge("账号实时", color: .green)
+        case .syncing:
+            badge("同步中", color: MeterPalette.purple)
+        case .fallback(_, let reason):
+            if snapshot.rateLimits?.source == .accountAPI {
+                badge("账号缓存", color: .orange)
+                    .help(reason)
+            } else {
+                badge("本地快照·跨端可能缺失", color: .orange)
+                    .help(reason)
+            }
+        case .waiting:
+            badge("等待同步", color: .secondary)
+        }
+    }
+
+    private func badge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
     }
 }
 
@@ -361,7 +403,7 @@ private struct HeatmapCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Token 来自本机 sessions 日志；额度百分比来自 Codex 最新窗口快照。")
+            Text("Token 来自本机 sessions；额度优先通过 Codex 账号接口同步，失败时回退本地快照。")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.tertiary)
         }
@@ -489,7 +531,7 @@ struct SettingsView: View {
 
             Toggle("在菜单栏显示最长窗口的剩余百分比", isOn: $showMenuPercentage)
 
-            Text("应用只读取本地会话日志，不读取 auth.json，也不会上传数据。Codex 日志字段不是公开稳定 API，版本变化时可能需要更新解析器。")
+            Text("Token 只读取本地会话日志；额度通过本机 Codex App Server 使用现有登录状态向 OpenAI 查询。应用不读取 auth.json，也不保存任何凭据。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

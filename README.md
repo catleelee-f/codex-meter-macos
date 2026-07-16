@@ -2,36 +2,42 @@
 
 ![Codex Meter screenshot](docs/screenshot.png)
 
-A privacy-first macOS menu bar app for viewing local Codex token activity and the latest rate-limit snapshot written by Codex.
+A privacy-conscious macOS menu bar app for viewing local Codex token activity and live account-wide Codex quota.
 
-一个原生 macOS 菜单栏小工具，用于查看本机 Codex Token 活动、额度窗口和近 90 天热力图。
+一个原生 macOS 菜单栏小工具，用于查看本机 Codex Token 活动、账号实时额度窗口和近 90 天热力图。
 
 > Unofficial community project. Not affiliated with or endorsed by OpenAI.
 
 ## Features
 
 - Native AppKit status item with a SwiftUI dashboard
-- Remaining percentage for the longest available Codex usage window
+- Live account-wide quota, including usage from other Codex clients
+- Remaining percentage and reset time for every available Codex usage window
 - Today's input, cached-input, and output token activity
 - Dynamic support for one or multiple rate-limit windows
 - 90-day high-contrast usage heatmap
 - Incremental local cache for fast refreshes
+- Clear account-live, account-cache, and local-fallback source labels
 - Custom sessions directory and 1/5/15-minute refresh intervals
 - Universal binary for Apple Silicon and Intel Macs
-- No analytics, no account token access, and no data uploads
+- No analytics, direct credential reads, or stored account tokens
 
 ## Data and privacy
 
-Codex Meter reads only local JSONL files under:
+Local token activity is read from JSONL files under:
 
 ```text
 ~/.codex/sessions
 ```
 
 - Token counts are local estimates derived from `total_token_usage` events. They are not billing records.
-- Rate-limit percentages and reset times come from the latest local `rate_limits` snapshot.
-- The app does not read `auth.json` and does not send data over the network.
+- Rate-limit percentages and reset times are fetched through the installed Codex App Server using `account/rateLimits/read`. This reflects the signed-in account across clients, including usage made outside this Mac's local sessions.
+- The app does not read `auth.json`, copy credentials, or store account tokens. Codex App Server reuses the existing Codex sign-in and communicates with OpenAI as Codex normally does.
+- The account query does not start a model turn. Automatic account sync is limited to once every five minutes; the refresh button requests an immediate update.
+- If Codex App Server or the network is unavailable, the app falls back to the latest local `rate_limits` snapshot and labels it clearly because cross-client usage may be missing.
 - Codex session-log fields are not a public stable API and may change in future Codex versions.
+
+Live account sync requires a current, signed-in Codex Desktop app or Codex CLI. The local token dashboard still works without it.
 
 ## Install
 
@@ -48,6 +54,7 @@ Requirements:
 
 - macOS 13 or newer
 - Xcode Command Line Tools
+- Codex Desktop or Codex CLI signed in for live account quota
 
 ```bash
 git clone https://github.com/catleelee-f/codex-meter-macos.git
@@ -68,9 +75,16 @@ To run the parser smoke test against your own local Codex sessions:
 ./scripts/test-parser.sh
 ```
 
+To run an optional live account-sync probe:
+
+```bash
+./scripts/test-account-sync.sh
+```
+
 ## Architecture
 
 - `source/CodexLogScanner.swift` — incremental JSONL scanner and cache
+- `source/CodexAccountUsageClient.swift` — read-only Codex App Server account quota client
 - `source/UsageStore.swift` — refresh scheduling and preferences
 - `source/DashboardViews.swift` — dashboard, heatmap, and settings UI
 - `source/AppDelegate.swift` — status item, popover, and app lifecycle
@@ -79,6 +93,8 @@ To run the parser smoke test against your own local Codex sessions:
 ## Security
 
 Please report vulnerabilities through GitHub's private vulnerability reporting when available. See [SECURITY.md](SECURITY.md).
+
+Codex App Server integration follows OpenAI's documented JSONL-over-stdio initialization flow. See the [Codex App Server documentation](https://developers.openai.com/codex/app-server/).
 
 ## License
 

@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPopover() {
         guard let button = statusItem?.button, !popover.isShown else { return }
-        store.refresh()
+        store.refreshIfNeeded()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
