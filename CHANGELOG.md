@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-07-20
+
+- Add daily, weekly, and cumulative views for the 90-day local usage history.
+- Show immediate token details when hovering usage cells or bars.
+- Add a resizable detailed-statistics window with 7/30/90-day project rankings.
+- Group local sessions by their recorded working directory without reading conversation content.
+- Show per-project totals, shares, active days, and most recent activity.
+- Keep the existing Open Codex action alongside Details, Settings, and Quit.
+- Upgrade the scanner cache schema so existing installations rebuild project metadata once.
+
 ## 1.1.0 - 2026-07-16
 
 - Sync account-wide quota through Codex App Server, including usage from other Codex clients.

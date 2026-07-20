@@ -128,8 +128,48 @@ struct DailyUsage: Identifiable, Equatable {
     var id: Date { date }
 }
 
+struct WeeklyUsage: Identifiable, Equatable {
+    var startDate: Date
+    var endDate: Date
+    var usage: TokenUsage
+
+    var id: Date { startDate }
+}
+
+struct ProjectUsage: Identifiable, Equatable {
+    var path: String
+    var days: [DailyUsage]
+
+    var id: String { path }
+
+    var name: String {
+        guard path != "(unknown)" else { return "未识别项目" }
+        let component = URL(fileURLWithPath: path).lastPathComponent
+        return component.isEmpty ? path : component
+    }
+
+    var totalUsage: TokenUsage {
+        usage(last: days.count)
+    }
+
+    var activeDayCount: Int {
+        days.filter { $0.usage.total > 0 }.count
+    }
+
+    var lastActiveDate: Date? {
+        days.last(where: { $0.usage.total > 0 })?.date
+    }
+
+    func usage(last count: Int) -> TokenUsage {
+        days.suffix(max(0, count)).reduce(.zero) { partial, day in
+            partial.adding(day.usage)
+        }
+    }
+}
+
 struct UsageSnapshot: Equatable {
     var days: [DailyUsage]
+    var projects: [ProjectUsage]
     var rateLimits: RateLimitSnapshot?
     var scannedFileCount: Int
     var scannedBytes: Int64
@@ -137,6 +177,7 @@ struct UsageSnapshot: Equatable {
 
     static let empty = UsageSnapshot(
         days: [],
+        projects: [],
         rateLimits: nil,
         scannedFileCount: 0,
         scannedBytes: 0,
@@ -148,18 +189,35 @@ struct UsageSnapshot: Equatable {
     }
 
     var trailingSevenDayUsage: TokenUsage {
-        aggregate(last: 7)
+        usage(last: 7)
     }
 
     var trailingNinetyDayUsage: TokenUsage {
-        aggregate(last: 90)
+        usage(last: 90)
+    }
+
+    var weeklyUsage: [WeeklyUsage] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: days) { day -> Date in
+            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: day.date)
+            return calendar.date(from: components) ?? calendar.startOfDay(for: day.date)
+        }
+
+        return grouped.map { startDate, entries in
+            let endDate = calendar.date(byAdding: .day, value: 6, to: startDate) ?? startDate
+            let total = entries.reduce(TokenUsage.zero) { partial, day in
+                partial.adding(day.usage)
+            }
+            return WeeklyUsage(startDate: startDate, endDate: endDate, usage: total)
+        }
+        .sorted(by: { $0.startDate < $1.startDate })
     }
 
     var primaryDisplayWindow: RateLimitWindow? {
         rateLimits?.windows.max(by: { $0.windowMinutes < $1.windowMinutes })
     }
 
-    private func aggregate(last count: Int) -> TokenUsage {
+    func usage(last count: Int) -> TokenUsage {
         days.suffix(count).reduce(.zero) { partial, day in
             partial.adding(day.usage)
         }

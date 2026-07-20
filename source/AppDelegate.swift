@@ -22,11 +22,35 @@ final class SettingsWindowController: NSWindowController {
     }
 }
 
+final class DetailsWindowController: NSWindowController {
+    init(store: UsageStore, onOpenCodex: @escaping () -> Void) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Codex 详细统计"
+        window.minSize = NSSize(width: 760, height: 560)
+        window.contentViewController = NSHostingController(
+            rootView: DetailsView(store: store, onOpenCodex: onOpenCodex)
+        )
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = UsageStore()
     private let popover = NSPopover()
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
+    private var detailsWindowController: DetailsWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -109,11 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configurePopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 446, height: 665)
+        popover.contentSize = NSSize(width: 446, height: 700)
         popover.contentViewController = NSHostingController(
             rootView: DashboardView(
                 store: store,
                 onOpenCodex: { [weak self] in self?.openCodex() },
+                onOpenDetails: { [weak self] in self?.showDetails() },
                 onOpenSettings: { [weak self] in self?.showSettings() },
                 onQuit: { NSApp.terminate(nil) }
             )
@@ -162,6 +187,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindowController = SettingsWindowController(store: store)
         }
         settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showDetails() {
+        popover.performClose(nil)
+        store.refreshIfNeeded()
+        if detailsWindowController == nil {
+            detailsWindowController = DetailsWindowController(
+                store: store,
+                onOpenCodex: { [weak self] in self?.openCodex() }
+            )
+        }
+        detailsWindowController?.showWindow(nil)
+        detailsWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
