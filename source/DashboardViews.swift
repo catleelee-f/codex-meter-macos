@@ -11,6 +11,7 @@ private enum MeterPalette {
 struct DashboardView: View {
     @ObservedObject var store: UsageStore
     let onOpenCodex: () -> Void
+    let onOpenDetails: () -> Void
     let onOpenSettings: () -> Void
     let onQuit: () -> Void
 
@@ -37,6 +38,7 @@ struct DashboardView: View {
 
             HStack(spacing: 9) {
                 footerButton("打开 Codex", systemImage: "macwindow", action: onOpenCodex)
+                footerButton("详细统计", systemImage: "chart.bar.xaxis", action: onOpenDetails)
                 footerButton("设置", systemImage: "gearshape", action: onOpenSettings)
                 footerButton("退出", systemImage: "power", action: onQuit)
             }
@@ -139,7 +141,7 @@ struct DashboardView: View {
                 Image(systemName: systemImage)
                 Text(title)
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 11, weight: .medium))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
@@ -359,12 +361,33 @@ private struct RateWindowRow: View {
     }
 }
 
+private enum UsageChartMode: String, CaseIterable, Identifiable {
+    case daily = "每日"
+    case weekly = "每周"
+    case cumulative = "累计"
+
+    var id: String { rawValue }
+}
+
+private struct UsageHover: Equatable {
+    var id: String
+    var text: String
+}
+
+private struct CumulativeUsagePoint: Identifiable {
+    var day: DailyUsage
+    var total: Int64
+    var id: Date { day.date }
+}
+
 private struct HeatmapCard: View {
     let snapshot: UsageSnapshot
     @Environment(\.colorScheme) private var colorScheme
+    @State private var mode: UsageChartMode = .daily
+    @State private var hovered: UsageHover?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Label("近 90 天用量", systemImage: "calendar")
                     .font(.system(size: 15, weight: .semibold))
@@ -374,20 +397,50 @@ private struct HeatmapCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: 7) {
-                VStack(spacing: 3) {
-                    ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { day in
-                        Text(day)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 12, height: 15)
+            Picker("统计粒度", selection: $mode) {
+                ForEach(UsageChartMode.allCases) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 205)
+            .onChange(of: mode) { _ in hovered = nil }
+
+            ZStack(alignment: .top) {
+                Group {
+                    switch mode {
+                    case .daily:
+                        dailyChart
+                    case .weekly:
+                        weeklyChart
+                    case .cumulative:
+                        cumulativeChart
                     }
                 }
-                heatmapGrid
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if let hovered {
+                    Text(hovered.text)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(Color.primary.opacity(0.16), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                        .allowsHitTesting(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        .zIndex(2)
+                }
             }
+            .frame(height: 123)
+            .animation(.easeOut(duration: 0.12), value: hovered)
 
             HStack {
-                Text("合计 \(UsageFormatters.tokens(snapshot.trailingNinetyDayUsage.total))")
+                Text(footerSummary)
                     .font(.caption.weight(.semibold))
                 Spacer()
                 Text("少")
@@ -403,12 +456,27 @@ private struct HeatmapCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Token 来自本机 sessions；额度优先通过 Codex 账号接口同步，失败时回退本地快照。")
+            Text("Token 与项目统计来自本机 sessions；账号额度另行实时同步。")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.tertiary)
         }
         .padding(15)
         .meterCard()
+    }
+
+    private var dailyChart: some View {
+        HStack(alignment: .top, spacing: 7) {
+            VStack(spacing: 3) {
+                ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { day in
+                    Text(day)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12, height: 15)
+                }
+            }
+            heatmapGrid
+            Spacer(minLength: 0)
+        }
     }
 
     private var heatmapGrid: some View {
@@ -432,13 +500,119 @@ private struct HeatmapCard: View {
                         let date = calendar.date(byAdding: .day, value: offset, to: gridStart) ?? gridStart
                         let value = usageByDay[date] ?? 0
                         let isAvailable = date >= firstDay && date <= today
+                        let item = UsageHover(
+                            id: "day-\(date.timeIntervalSince1970)",
+                            text: dailyTooltip(date: date, value: value, isAvailable: isAvailable)
+                        )
                         RoundedRectangle(cornerRadius: 3)
                             .fill(isAvailable ? heatColor(value: value, distribution: positiveValues) : Color.primary.opacity(0.035))
                             .frame(width: 15, height: 15)
-                            .help(tooltip(date: date, value: value, isAvailable: isAvailable))
+                            .contentShape(Rectangle())
+                            .onHover { isInside in
+                                updateHover(item, isInside: isInside, isAvailable: isAvailable)
+                            }
+                            .help(item.text)
                     }
                 }
             }
+        }
+    }
+
+    private var weeklyChart: some View {
+        let weeks = snapshot.weeklyUsage
+        let maximum = max(1, weeks.map(\.usage.total).max() ?? 0)
+
+        return GeometryReader { proxy in
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(weeks) { week in
+                    let ratio = Double(week.usage.total) / Double(maximum)
+                    let item = UsageHover(
+                        id: "week-\(week.startDate.timeIntervalSince1970)",
+                        text: weeklyTooltip(week)
+                    )
+                    VStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                LinearGradient(
+                                    colors: [MeterPalette.purple, MeterPalette.violet],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .frame(height: max(5, (proxy.size.height - 18) * ratio))
+                            .opacity(week.usage.total == 0 ? 0.15 : 1)
+                        Text(weekLabel(week.startDate))
+                            .font(.system(size: 8))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onHover { updateHover(item, isInside: $0, isAvailable: true) }
+                    .help(item.text)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private var cumulativeChart: some View {
+        let points = cumulativePoints
+        let maximum = max(1, points.last?.total ?? 0)
+
+        return GeometryReader { proxy in
+            HStack(alignment: .bottom, spacing: 1) {
+                ForEach(points) { point in
+                    let ratio = Double(point.total) / Double(maximum)
+                    let item = UsageHover(
+                        id: "total-\(point.day.date.timeIntervalSince1970)",
+                        text: cumulativeTooltip(point)
+                    )
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(
+                            LinearGradient(
+                                colors: [MeterPalette.blue, MeterPalette.purple],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: max(2, (proxy.size.height - 13) * ratio))
+                        .contentShape(Rectangle())
+                        .onHover { updateHover(item, isInside: $0, isAvailable: true) }
+                        .help(item.text)
+                }
+            }
+            .padding(.horizontal, 2)
+            .overlay(alignment: .bottomLeading) {
+                HStack {
+                    Text(shortDate(points.first?.day.date))
+                    Spacer()
+                    Text(shortDate(points.last?.day.date))
+                }
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var cumulativePoints: [CumulativeUsagePoint] {
+        var total: Int64 = 0
+        return snapshot.days.map { day in
+            total += day.usage.total
+            return CumulativeUsagePoint(day: day, total: total)
+        }
+    }
+
+    private var footerSummary: String {
+        switch mode {
+        case .daily:
+            return "90 天合计 \(UsageFormatters.tokens(snapshot.trailingNinetyDayUsage.total))"
+        case .weekly:
+            return "本周 \(UsageFormatters.tokens(snapshot.weeklyUsage.last?.usage.total ?? 0))"
+        case .cumulative:
+            return "累计 \(UsageFormatters.tokens(snapshot.trailingNinetyDayUsage.total))"
         }
     }
 
@@ -480,12 +654,54 @@ private struct HeatmapCard: View {
         }
     }
 
-    private func tooltip(date: Date, value: Int64, isAvailable: Bool) -> String {
+    private func updateHover(_ item: UsageHover, isInside: Bool, isAvailable: Bool) {
+        guard isAvailable else { return }
+        if isInside {
+            hovered = item
+        } else if hovered?.id == item.id {
+            hovered = nil
+        }
+    }
+
+    private func dailyTooltip(date: Date, value: Int64, isAvailable: Bool) -> String {
         guard isAvailable else { return "无统计" }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "M月d日"
-        return "\(formatter.string(from: date)) · \(UsageFormatters.tokens(value)) tokens"
+        return "\(formatter.string(from: date)) 使用了 \(tooltipTokens(value)) 个 Token"
+    }
+
+    private func weeklyTooltip(_ week: WeeklyUsage) -> String {
+        "\(shortDate(week.startDate))–\(shortDate(week.endDate)) 使用了 \(tooltipTokens(week.usage.total)) 个 Token"
+    }
+
+    private func cumulativeTooltip(_ point: CumulativeUsagePoint) -> String {
+        "截至 \(shortDate(point.day.date)) 累计 \(tooltipTokens(point.total)) 个 Token"
+    }
+
+    private func shortDate(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
+    }
+
+    private func weekLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
+    }
+
+    private func tooltipTokens(_ value: Int64) -> String {
+        let number = Double(max(0, value))
+        if number >= 100_000_000 {
+            return String(format: "%.2f 亿", number / 100_000_000)
+        }
+        if number >= 10_000 {
+            return String(format: "%.1f 万", number / 10_000)
+        }
+        return String(Int64(number))
     }
 }
 

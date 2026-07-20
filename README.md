@@ -4,7 +4,7 @@
 
 A privacy-conscious macOS menu bar app for viewing local Codex token activity and live account-wide Codex quota.
 
-一个原生 macOS 菜单栏小工具，用于查看本机 Codex Token 活动、账号实时额度窗口和近 90 天热力图。
+一个原生 macOS 菜单栏小工具，用于查看本机 Codex Token 活动、账号实时额度、用量趋势和项目排行。
 
 > Unofficial community project. Not affiliated with or endorsed by OpenAI.
 
@@ -15,7 +15,10 @@ A privacy-conscious macOS menu bar app for viewing local Codex token activity an
 - Remaining percentage and reset time for every available Codex usage window
 - Today's input, cached-input, and output token activity
 - Dynamic support for one or multiple rate-limit windows
-- 90-day high-contrast usage heatmap
+- Daily, weekly, and cumulative 90-day usage views
+- Immediate hover details for daily cells, weekly bars, and cumulative usage
+- Separate detail window with 7/30/90-day project rankings
+- Per-project token share, active days, last activity, and working directory
 - Incremental local cache for fast refreshes
 - Clear account-live, account-cache, and local-fallback source labels
 - Custom sessions directory and 1/5/15-minute refresh intervals
@@ -31,6 +34,7 @@ Local token activity is read from JSONL files under:
 ```
 
 - Token counts are local estimates derived from `total_token_usage` events. They are not billing records.
+- Project rankings group local sessions by `session_meta.payload.cwd`; no conversation content is needed for this aggregation.
 - Rate-limit percentages and reset times are fetched through the installed Codex App Server using `account/rateLimits/read`. This reflects the signed-in account across clients, including usage made outside this Mac's local sessions.
 - The app does not read `auth.json`, copy credentials, or store account tokens. Codex App Server reuses the existing Codex sign-in and communicates with OpenAI as Codex normally does.
 - The account query does not start a model turn. Automatic account sync is limited to once every five minutes; the refresh button requests an immediate update.
@@ -87,6 +91,7 @@ To run an optional live account-sync probe:
 - `source/CodexAccountUsageClient.swift` — read-only Codex App Server account quota client
 - `source/UsageStore.swift` — refresh scheduling and preferences
 - `source/DashboardViews.swift` — dashboard, heatmap, and settings UI
+- `source/DetailsView.swift` — detailed summaries and project ranking UI
 - `source/AppDelegate.swift` — status item, popover, and app lifecycle
 - `scripts/build.sh` — universal build, ad-hoc signing, and ZIP packaging
 

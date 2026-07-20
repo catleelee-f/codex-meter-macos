@@ -34,6 +34,11 @@ do {
     print("bytes=\(snapshot.scannedBytes)")
     print("today_tokens=\(snapshot.todayUsage.total)")
     print("ninety_day_tokens=\(snapshot.trailingNinetyDayUsage.total)")
+    print("weeks=\(snapshot.weeklyUsage.count)")
+    print("projects=\(snapshot.projects.count)")
+    if let firstProject = snapshot.projects.first {
+        print("top_project=\(firstProject.name):\(firstProject.totalUsage.total)")
+    }
     print("rate_windows=\(windows)")
 
     guard snapshot.scannedFileCount > 0 else {
@@ -44,6 +49,16 @@ do {
     }
     guard snapshot.rateLimits?.windows.isEmpty == false else {
         fatalError("Expected at least one rate-limit window")
+    }
+    guard !snapshot.weeklyUsage.isEmpty else {
+        fatalError("Expected weekly usage buckets")
+    }
+    guard snapshot.weeklyUsage.reduce(0, { $0 + $1.usage.total }) == snapshot.trailingNinetyDayUsage.total else {
+        fatalError("Expected weekly totals to match the 90-day aggregate")
+    }
+    guard !snapshot.projects.isEmpty,
+          snapshot.projects.reduce(0, { $0 + $1.totalUsage.total }) == snapshot.trailingNinetyDayUsage.total else {
+        fatalError("Expected project totals to match the 90-day aggregate")
     }
 } catch {
     fatalError("Scanner failed: \(error.localizedDescription)")

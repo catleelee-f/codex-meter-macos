@@ -30,6 +30,7 @@ SOURCES=(
   "$PROJECT_DIR/source/CodexAccountUsageClient.swift"
   "$PROJECT_DIR/source/UsageStore.swift"
   "$PROJECT_DIR/source/DashboardViews.swift"
+  "$PROJECT_DIR/source/DetailsView.swift"
   "$PROJECT_DIR/source/AppDelegate.swift"
 )
 

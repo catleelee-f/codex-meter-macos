@@ -1,7 +1,7 @@
 import Foundation
 
 private struct ScannerCache: Codable {
-    var version: Int = 2
+    var version: Int = 3
     var rootPath: String
     var files: [String: FileCheckpoint] = [:]
 }
@@ -12,6 +12,7 @@ private struct FileCheckpoint: Codable {
     var lastTotal: TokenUsage?
     var daily: [String: TokenUsage] = [:]
     var latestRateLimits: RateLimitSnapshot?
+    var projectPath: String?
 }
 
 private struct TokenEvent {
@@ -56,7 +57,7 @@ final class CodexLogScanner {
         }
 
         var cache = loadCache()
-        if cache.version != 2 || cache.rootPath != rootURL.path {
+        if cache.version != 3 || cache.rootPath != rootURL.path {
             cache = ScannerCache(rootPath: rootURL.path)
         }
 
@@ -131,9 +132,12 @@ final class CodexLogScanner {
         saveCache(cache)
 
         var aggregate: [String: TokenUsage] = [:]
+        var projectAggregate: [String: [String: TokenUsage]] = [:]
         for checkpoint in cache.files.values {
+            let projectPath = normalizedProjectPath(checkpoint.projectPath)
             for (key, usage) in checkpoint.daily {
                 aggregate[key, default: .zero].add(usage)
+                projectAggregate[projectPath, default: [:]][key, default: .zero].add(usage)
             }
         }
 
@@ -149,12 +153,27 @@ final class CodexLogScanner {
             days.append(DailyUsage(date: date, usage: aggregate[dayKey(for: date)] ?? .zero))
         }
 
+        let projects = projectAggregate.map { path, usageByDay in
+            let projectDays = days.map { day in
+                DailyUsage(date: day.date, usage: usageByDay[dayKey(for: day.date)] ?? .zero)
+            }
+            return ProjectUsage(path: path, days: projectDays)
+        }
+        .filter { $0.totalUsage.total > 0 }
+        .sorted { lhs, rhs in
+            if lhs.totalUsage.total == rhs.totalUsage.total {
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+            return lhs.totalUsage.total > rhs.totalUsage.total
+        }
+
         let rateLimits = cache.files.values
             .compactMap(\.latestRateLimits)
             .max(by: { $0.timestamp < $1.timestamp })
 
         return UsageSnapshot(
             days: days,
+            projects: projects,
             rateLimits: rateLimits,
             scannedFileCount: files.count,
             scannedBytes: scannedBytes,
@@ -186,15 +205,22 @@ final class CodexLogScanner {
         checkpoint original: FileCheckpoint,
         retentionCutoff: Date
     ) throws -> FileCheckpoint {
+        var baseCheckpoint = original
+        if baseCheckpoint.projectPath == nil {
+            baseCheckpoint.projectPath = readProjectPath(from: url)
+        }
+
         if requestedOffset == 0,
            let fastResult = try? scanWholeFileWithGrep(url, retentionCutoff: retentionCutoff) {
-            return fastResult
+            var result = fastResult
+            result.projectPath = baseCheckpoint.projectPath
+            return result
         }
 
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        guard !data.isEmpty else { return original }
+        guard !data.isEmpty else { return baseCheckpoint }
 
-        var checkpoint = original
+        var checkpoint = baseCheckpoint
         var cursor = min(max(0, Int(requestedOffset)), data.count)
 
         if cursor > 0, data[cursor - 1] != 0x0A {
@@ -228,6 +254,31 @@ final class CodexLogScanner {
 
         checkpoint.scannedSize = Int64(data.count)
         return checkpoint
+    }
+
+    private func readProjectPath(from url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        let prefix = handle.readData(ofLength: 512_000)
+        for line in prefix.split(separator: 0x0A, omittingEmptySubsequences: true).prefix(50) {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line)),
+                  let root = object as? [String: Any],
+                  root["type"] as? String == "session_meta",
+                  let payload = root["payload"] as? [String: Any],
+                  let cwd = payload["cwd"] as? String,
+                  !cwd.isEmpty else {
+                continue
+            }
+            return cwd
+        }
+        return nil
+    }
+
+    private func normalizedProjectPath(_ path: String?) -> String {
+        guard let path, !path.isEmpty else { return "(unknown)" }
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            .standardizedFileURL.path
     }
 
     private func scanWholeFileWithGrep(_ url: URL, retentionCutoff: Date) throws -> FileCheckpoint {
