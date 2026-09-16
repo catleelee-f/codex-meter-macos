@@ -11,14 +11,14 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Offline regression tests
         run: bash scripts/test-offline.sh
       - name: Build universal app
         run: bash scripts/build.sh
       - name: Verify package
         run: |
-          lipo -verify_arch arm64 x86_64 outputs/CodexMeter.app/Contents/MacOS/CodexMeter
+          lipo outputs/CodexMeter.app/Contents/MacOS/CodexMeter -verify_arch arm64 x86_64
           codesign --verify --deep --strict outputs/CodexMeter.app
           plutil -lint outputs/CodexMeter.app/Contents/Info.plist
           unzip -t outputs/CodexMeter-macOS-universal.zip
