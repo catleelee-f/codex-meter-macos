@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 - 2026-09-16
+
+- 新增 GitHub Actions，自动运行离线回归测试、Universal 构建、签名和压缩包检查。
+- 新增合成日志测试，覆盖缓存、增量读取、截断、计数重置和汇总一致性。
+- 完善中文贡献指南、隐私要求、发布流程和路线图。
+- 本版重点是可验证的维护基础，保留现有应用功能。
+
 ## 1.2.0 - 2026-07-20
 
 - Add daily, weekly, and cumulative views for the 90-day local usage history.

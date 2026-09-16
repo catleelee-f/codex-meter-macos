@@ -1,5 +1,11 @@
 # Codex Meter for macOS
 
+[![macOS CI](https://github.com/catleelee-f/codex-meter-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/catleelee-f/codex-meter-macos/actions/workflows/ci.yml)
+
+维护入口：[贡献指南](CONTRIBUTING.md) · [路线图](ROADMAP.md) · [问题反馈](https://github.com/catleelee-f/codex-meter-macos/issues)
+
+v1.3.0 增加独立离线回归测试与 macOS CI。运行 `bash scripts/test-offline.sh` 即可验证，无需个人会话日志或账号。
+
 ![Codex Meter screenshot](docs/screenshot.png)
 
 A privacy-conscious macOS menu bar app for viewing local Codex token activity and live account-wide Codex quota.

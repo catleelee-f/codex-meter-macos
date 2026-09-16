@@ -1,0 +1,24 @@
+name: macOS CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-build:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline regression tests
+        run: bash scripts/test-offline.sh
+      - name: Build universal app
+        run: bash scripts/build.sh
+      - name: Verify package
+        run: |
+          lipo -verify_arch arm64 x86_64 outputs/CodexMeter.app/Contents/MacOS/CodexMeter
+          codesign --verify --deep --strict outputs/CodexMeter.app
+          plutil -lint outputs/CodexMeter.app/Contents/Info.plist
+          unzip -t outputs/CodexMeter-macOS-universal.zip
