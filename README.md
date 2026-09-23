@@ -19,6 +19,7 @@ A privacy-conscious macOS menu bar app for viewing local Codex token activity an
 - Native AppKit status item with a SwiftUI dashboard
 - Live account-wide quota, including usage from other Codex clients
 - Remaining percentage and reset time for every available Codex usage window
+- Usage window bars show remaining quota as solid fill and used quota as the empty track
 - Today's input, cached-input, and output token activity
 - Dynamic support for one or multiple rate-limit windows
 - Daily, weekly, and cumulative 90-day usage views

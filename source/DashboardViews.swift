@@ -353,7 +353,7 @@ private struct RateWindowRow: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: proxy.size.width * min(1, max(0, window.usedPercent / 100)))
+                        .frame(width: proxy.size.width * min(1, max(0, window.remainingPercent / 100)))
                 }
             }
             .frame(height: 7)
